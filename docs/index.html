@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#14263b">
+<meta name="description" content="Instalacja lokalnego Bielika i strumieniowego rozpoznawania polskiej mowy na NVIDIA Jetson Orin z JetPack 6.">
+<title>OQLLM na Jetson Orin · Instalacja</title>
+<link rel="stylesheet" href="style.css"><script defer src="site.js"></script>
+</head>
+<body>
+<header><div class="wrap nav"><a class="wordmark" href="#top" aria-label="OQLLM — początek">oqllm<span>/</span>get</a><nav aria-label="Główna"><a href="#api">Test API</a><a href="https://github.com/oqllm/get-oqllm-com">GitHub</a></nav></div></header>
+<main id="top">
+<section class="hero wrap"><div class="intro"><p class="platform">NVIDIA JETSON ORIN</p><h1>Bielik i mowa <br>na Twoim<br><em>Jetsonie.</em></h1><p class="lead">Lokalny czat po polsku i tekst z mikrofonu w trakcie wypowiedzi. Po pobraniu modeli oba działają bez internetu.</p></div>
+<div class="console"><div class="bar"><span>Instalacja · 0.1.0 RC</span><span>bash</span></div>
+<div class="settings"><label for="profile">Profil serwera</label><select id="profile"><option value="">SubLLM + Bielik + STT</option><option value=" --with-oql">Pełny OQLLM + Bielik + STT</option></select></div>
+<pre class="command"><code id="install">f=$(mktemp) &amp;&amp; curl -fsSL https://get.oqllm.com/install.sh -o "$f" &amp;&amp; sudo bash "$f"</code></pre>
+<div class="actions"><button type="button" data-copy="install">Kopiuj polecenie</button><a href="install.sh">Kod instalatora</a></div>
+<p class="hint" id="hint">Publiczny SubLLM. Instalacja pobiera modele i włącza usługi systemd.</p>
+</div></section>
+<section class="spec"><div class="wrap specs"><div><span>System</span><strong>Ubuntu 22.04</strong></div><div><span>Sterowniki NVIDIA</span><strong>JetPack 6 · R36</strong></div><div><span>Pamięć modułu</span><strong>8 GB RAM lub więcej</strong></div><div><span>Wolne miejsce</span><strong>14 GiB na instalację</strong></div></div></section>
+<section class="wrap api" id="api"><div><p class="platform">LOKALNE API</p><h2>Pierwsze<br>żądanie</h2><p>Wykonaj polecenie na Jetsonie. Serwisy nasłuchują na interfejsie lokalnym.</p><p>Stan czatu sprawdzisz pod <code>127.0.0.1:11437/health</code>.</p></div>
+<div class="examples"><section><div class="ex-title"><h3>Czat z Bielikiem</h3><button data-copy="chat">Kopiuj</button></div><p>Tokeny odpowiedzi przychodzą strumieniowo przez HTTP.</p>
+<pre><code id="chat">curl -N http://127.0.0.1:11437/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"bielik","stream":true,"messages":[{"role":"user","content":"Przywitaj się po polsku."}]}'</code></pre></section>
+<section><div class="ex-title"><h3>Transkrypcja z mikrofonu</h3><button data-copy="mic">Kopiuj</button></div><p>Po pięciu sekundach dostaniesz końcowy tekst. W trakcie nagrania klient wypisuje zmieniające się fragmenty.</p>
+<pre><code id="mic">arecord -q -d 5 -t raw -f S16_LE -r 16000 -c 1 | \
+  /opt/oqllm-jetson/0.1.0/venv/bin/python \
+  /opt/oqllm-jetson/0.1.0/runtime/listen.py</code></pre>
+<details><summary>Format WebSocket i dostęp z innego komputera</summary><p>Połącz się z <code>ws://127.0.0.1:11438/v1/listen</code>. Wysyłaj binarne ramki PCM 16-bit little-endian, mono 16 kHz. Na koniec wyślij wiadomość tekstową <code>end</code>. Odpowiedzi JSON zawierają pola <code>type</code> (partial lub final) oraz <code>text</code>. Jedno połączenie obsługuje wypowiedź do 120 sekund. Aktywny jest jeden strumień mowy.</p><p>Do pracy z sieci lokalnej użyj tunelu SSH, podstawiając użytkownika i adres swojego urządzenia.</p><pre><code>ssh -N -L 11437:127.0.0.1:11437 -L 11438:127.0.0.1:11438 użytkownik@adres-jetsona</code></pre></details></section>
+</div></section>
+<section class="models"><div class="wrap"><p class="platform">MODELE</p><h2>Co uruchamiasz</h2><div class="model-grid"><article><h3>Bielik 1.5B v3.0 Instruct</h3><p>Wagi SpeakLeash w formacie GGUF Q8_0 zajmują 1,70 GB. Ollama korzysta z pakietu NVIDIA dla JetPack 6. Kontekst ustawiono na 2048 tokenów.</p><a href="https://huggingface.co/speakleash/Bielik-1.5B-v3.0-Instruct-GGUF">Karta Bielika</a></article><article><h3>Nemotron 3.5 ASR</h3><p>Wariant INT8 przetwarza dźwięk na CPU w blokach 560 ms, dzięki czemu GPU pozostaje dostępne dla Bielika. Opóźnienie zależy od obciążenia Orina. Jakość względem Whisper zależy od nagrania.</p><a href="https://k2-fsa.github.io/sherpa/onnx/nemo/nemotron-streaming.html">Dokumentacja modelu strumieniowego</a></article></div><div class="measurement"><h3>Próba na polskich nagraniach</h3><p>Na 12 nagraniach FLEURS (108,36 s, 215 słów) Nemotron INT8 potrzebował 88,9 s i uzyskał 16,3% WER. Faster-whisper small INT8 potrzebował 178,3 s i uzyskał 15,3% WER. Niższy WER oznacza mniej błędów słownych. Pomiar na x86-64, dwa wątki CPU, modele załadowane. Przepustowość i opóźnienie na Jetsonie wymagają osobnego pomiaru.</p><a href="https://huggingface.co/datasets/google/fleurs">Nagrania FLEURS</a></div></div></section>
+<section class="wrap service"><h2>Obsługa usług</h2><p>Logi podejrzysz przez <code>journalctl -fu oqllm-jetson-api -u oqllm-jetson-stt</code>. Aby zatrzymać usługi i wyłączyć autostart, wykonaj <code>sudo systemctl disable --now oqllm-jetson-{stt,api,ollama}</code>. Jeśli wybrano pełny OQLLM, wyłącz również <code>oqllm-jetson-oql</code>.</p></section>
+</main><footer><div class="wrap nav"><span class="wordmark">oqllm<span>/</span>get</span><a href="https://github.com/oqllm/get-oqllm-com">Kod źródłowy na GitHubie</a></div></footer>
+<div role="status" id="status" class="sr"></div>
+</body></html>
